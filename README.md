@@ -12,7 +12,7 @@
 Run packages directly from this repository(no cache):
 
 ```sh
-nix run github:iedame/nur-packages#some-pakcage
+nix run github:iedame/nur-packages#some-package
 ```
 
 Use this repository in `flake.nix`:
