@@ -4,7 +4,15 @@
 
 final: prev:
 let
-  isReserved = n: n == "lib" || n == "overlays" || n == "modules";
+  isReserved =
+    n:
+    builtins.elem n [
+      "lib"
+      "overlays"
+      "modules"
+      "nixosModules"
+      "homeModules"
+    ];
   nameValuePair = n: v: {
     name = n;
     value = v;

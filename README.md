@@ -46,9 +46,10 @@ yours, with `follows`), with unfree allowed for its own packages.
 
 ### Through NUR
 
-With [NUR](https://github.com/nix-community/NUR#installation) set up:
-`pkgs.nur.repos.iedame.jagex-launcher`, and the module as
-`nur.repos.iedame.modules.runescape`.
+Once the repository is listed in NUR (nix-community/NUR#1266), and with
+[NUR](https://github.com/nix-community/NUR#installation) set up: a package
+as `pkgs.nur.repos.iedame.openrsc-launcher`, and the module as
+`nur.repos.iedame.modules.nixos.runescape`.
 
 ### Without installing
 
