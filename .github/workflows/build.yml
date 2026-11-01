@@ -1,76 +1,147 @@
-name: "Build and populate cache"
+name: CI
+
+# Checks every pull request and push to main: does the repository still
+# evaluate the way NUR evaluates it, is it formatted, and do the packages
+# build. On main, the free packages are also pushed to the Cachix cache.
 on:
   pull_request:
   push:
-    branches:
-      - main
-      - master
-  schedule:
-    # rebuild everyday at 2:51
-    # TIP: Choose a random time here so not all repositories are build at once:
-    # https://www.random.org/clock-times/?num=1&earliest=01%3A00&latest=08%3A00&interval=5&format=html&rnd=new
-    - cron:  '51 2 * * *'
+    branches: [main]
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
-  tests:
-    strategy:
-      matrix:
-        # Set this to notify the global nur package registry that changes are
-        # available.
-        #
-        # The repo name as used in
-        # https://github.com/nix-community/NUR/blob/master/repos.json
-        nurRepo:
-          - <YOUR_REPO_NAME>
-        # Set this to cache your build results in cachix for faster builds
-        # in CI and for everyone who uses your cache.
-        #
-        # Format: Your cachix cache host name without the ".cachix.org" suffix.
-        # Example: mycache (for mycache.cachix.org)
-        #
-        # For this to work, you also need to set the CACHIX_SIGNING_KEY or
-        # CACHIX_AUTH_TOKEN secret in your repository secrets settings in
-        # Github found at
-        # https://github.com/<your_githubname>/nur-packages/settings/secrets
-        cachixName:
-          - <YOUR_CACHIX_NAME>
-        nixPath:
-          - nixpkgs=https://github.com/NixOS/nixpkgs/archive/refs/heads/nixpkgs-unstable.tar.gz
-          - nixpkgs=https://github.com/NixOS/nixpkgs/archive/refs/heads/nixos-unstable.tar.gz
-          - nixpkgs=https://github.com/NixOS/nixpkgs/archive/refs/heads/nixos-25.05.tar.gz
-    runs-on: ubuntu-latest
+  check:
+    name: Evaluate and check formatting
+    runs-on: ubuntu-24.04
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v6
-    - name: Install nix
-      uses: cachix/install-nix-action@v31
-      with:
-        nix_path: "${{ matrix.nixPath }}"
-        extra_nix_config: |
-          experimental-features = nix-command flakes
-          access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
-    - name: Show nixpkgs version
-      run: nix-instantiate --eval -E '(import <nixpkgs> {}).lib.version'
-    - name: Setup cachix
-      uses: cachix/cachix-action@v16
-      # Don't replace <YOUR_CACHIX_NAME> here!
-      if: ${{ matrix.cachixName != '<YOUR_CACHIX_NAME>' }}
-      with:
-        name: ${{ matrix.cachixName }}
-        signingKey: '${{ secrets.CACHIX_SIGNING_KEY }}'
-        authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-    - name: Check evaluation
-      run: |
-        nix-env -f . -qa \* --meta --xml \
-          --allowed-uris https://static.rust-lang.org \
-          --option restrict-eval true \
-          --option allow-import-from-derivation true \
-          --drv-path --show-trace \
-          -I nixpkgs=$(nix-instantiate --find-file nixpkgs) \
-          -I $PWD
-    - name: Build nix packages
-      run: nix shell -f '<nixpkgs>' nix-build-uncached -c nix-build-uncached ci.nix -A cacheOutputs
-    - name: Trigger NUR update
-      # Don't replace <YOUR_REPO_NAME> here!
-      if: ${{ matrix.nurRepo != '<YOUR_REPO_NAME>' }}
-      run: curl -XPOST "https://nur-update.nix-community.org/update?repo=${{ matrix.nurRepo }}"
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Nix
+        uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
+
+      - name: nix flake check
+        run: nix flake check --all-systems --print-build-logs
+
+      - name: Formatting
+        run: nix fmt -- --ci
+
+      # The same query NUR runs on the repository (ci/nur/eval.py in
+      # nix-community/NUR): restricted evaluation, with access to nothing
+      # but nixpkgs and this checkout. NUR leaves out a package that fails
+      # here without saying so; unfree ones always do, as NUR doesn't
+      # allow them.
+      - name: Evaluate as NUR does
+        run: |
+          nixpkgs=$(nix eval --raw --impure --expr "(builtins.getFlake \"$PWD\").inputs.nixpkgs.outPath")
+          nix-env -f . -qa '*' --meta --xml \
+            --allowed-uris https://static.rust-lang.org \
+            --option restrict-eval true \
+            --option allow-import-from-derivation true \
+            --drv-path --show-trace \
+            -I nixpkgs="$nixpkgs" \
+            -I "$PWD" > /dev/null
+
+  # Builds every package, unfree ones included. No Cachix here: unfree
+  # packages must not be uploaded to a public cache.
+  build:
+    name: Build ${{ matrix.system }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - system: x86_64-linux
+            os: ubuntu-24.04
+          - system: aarch64-linux
+            os: ubuntu-24.04-arm
+          - system: aarch64-darwin
+            os: macos-26
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Ubuntu 24.04 blocks unprivileged user namespaces through AppArmor,
+      # and single-user Nix needs them for its build sandbox; with
+      # sandbox-fallback off below, builds would fail instead of quietly
+      # running unsandboxed.
+      - name: Allow unprivileged user namespaces
+        if: runner.os == 'Linux'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Install Nix
+        uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
+        with:
+          nix_conf: |
+            sandbox = ${{ runner.os == 'Linux' && 'true' || 'relaxed' }}
+            sandbox-fallback = false
+
+      - name: Build the packages
+        run: |
+          attrs=$(nix eval --json .#packages.${{ matrix.system }} --apply builtins.attrNames \
+            | jq -r '.[] | ".#packages.${{ matrix.system }}.\(.)"')
+          if [ -z "$attrs" ]; then
+            echo "No packages for ${{ matrix.system }}"
+          else
+            nix build --no-link --print-build-logs $attrs
+          fi
+
+  # Pushes the free packages (ci.nix: not broken, available on the
+  # platform, free licence, not preferLocalBuild) to iedame.cachix.org,
+  # from main only.
+  cache:
+    name: Cache ${{ matrix.system }}
+    if: github.event_name == 'push'
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - system: x86_64-linux
+            os: ubuntu-24.04
+          - system: aarch64-linux
+            os: ubuntu-24.04-arm
+          - system: aarch64-darwin
+            os: macos-26
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Allow unprivileged user namespaces
+        if: runner.os == 'Linux'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Install Nix
+        uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
+        with:
+          nix_conf: |
+            sandbox = ${{ runner.os == 'Linux' && 'true' || 'relaxed' }}
+            sandbox-fallback = false
+
+      # Uploads every store path built after this step, so nothing unfree
+      # may be built in this job
+      - name: Set up Cachix
+        uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
+        with:
+          name: iedame
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      # nixpkgs without allowUnfree, so an unfree package that slipped
+      # through ci.nix fails to evaluate rather than being uploaded
+      - name: Build the cacheable packages
+        run: |
+          nix build --no-link --print-build-logs --impure --expr "
+            let
+              flake = builtins.getFlake \"$PWD\";
+              pkgs = import flake.inputs.nixpkgs { system = \"${{ matrix.system }}\"; };
+            in
+            pkgs.writeText \"cache\" (toString (import ./ci.nix { inherit pkgs; }).cacheOutputs)
+          "

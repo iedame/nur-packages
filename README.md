@@ -1,67 +1,85 @@
 # Rafael Ieda's Nix User Repository
 
-[![Build Status](https://github.com/iedame/nur-packages/workflows/Build%20and%20populate%20cache/badge.svg)](https://github.com/iedame/nur-packages)
-[![Rafael Ieda's Cachix Cache](https://img.shields.io/badge/cachix-iedame-blue.svg)](https://iedame.cachix.org)
+[![CI](https://github.com/iedame/nur-packages/actions/workflows/build.yml/badge.svg)](https://github.com/iedame/nur-packages/actions/workflows/build.yml)
+[![Cachix](https://img.shields.io/badge/cachix-iedame-blue.svg)](https://iedame.cachix.org)
 
-**My personal [NUR](https://github.com/nix-community/NUR) repository**, use it at your own risk.
+My personal [NUR](https://github.com/nix-community/NUR) repository: packages
+and NixOS modules I use on my own machines. Use them at your own risk.
 
-## How to use
+## What's here
 
-> **NOTE**: To follow the following usage, you need to have [Nix](https://nixos.org/nix/) installed with `flakes` & `new-comands` enabled first.
+| Name | Kind | Platforms | What it is |
+|---|---|---|---|
+| `jagex-launcher` | package (unfree) | x86_64-linux | The Jagex Launcher for RuneScape and Old School RuneScape, from Jagex's Linux AppImage |
+| `runescape` | NixOS module | x86_64-linux | The launcher plus RuneLite, with the fix that makes "Play" start RuneLite on NixOS |
 
-Run packages directly from this repository(no cache):
+Unfree packages need `allowUnfree` (or an `allowUnfreePredicate` naming
+them) in the configuration that uses them. They are left out of NUR's
+package search, as NUR evaluates without allowing them, and never go to
+the Cachix cache.
 
-```sh
-nix run github:iedame/nur-packages#some-package
-```
+## Using it
 
-Use this repository in `flake.nix`:
+### As a flake input (recommended)
 
 ```nix
-# flake.nix
 {
-  # the nixConfig here only affects the flake itself, not the system configuration!
-  # for more information, see:
-  #     https://nixos-and-flakes.thiscute.world/nixos-with-flakes/add-custom-cache-servers
-  nixConfig = {
-    # substituers will be appended to the default substituters when fetching packages
-    extra-substituters = [ "https://iedame.cachix.org" ];
-    extra-trusted-public-keys = [ "iedame.cachix.org-1:ULOEEwdkoANx+gj1//8s4DhstfTSipDWNKISwt5GUec=" ];
-  };
-
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    nur-iedame = {
-      url = "github:iedame/nur-packages";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-  };
-
-  outputs = { self, nixpkgs, nur-iedame, ... }@inputs: {
-    nixosConfigurations.default = nixpkgs.lib.nixosSystem rec {
-      system = "x86_64-linux";
-      modules = [
-        ({ pkgs, ... }: {
-          environment.systemPackages = with pkgs; [
-            # Add packages from this repo
-            nur-iedame.packages.${system}.some-package
-          ];
-        })
-      ];
-    };
+    nur-iedame.url = "github:iedame/nur-packages";
+    nur-iedame.inputs.nixpkgs.follows = "nixpkgs";
   };
 }
 ```
 
-## Notes for myself
+Then, in a NixOS configuration:
 
-1. Add your packages to the [pkgs](./pkgs) directory and to
-   [default.nix](./default.nix)
-   * Remember to mark the broken packages as `broken = true;` in the `meta`
-     attribute, or travis (and consequently caching) will fail!
-   * Library functions, modules and overlays go in the respective directories
-2. [Add yourself to NUR](https://github.com/nix-community/NUR#how-to-add-your-own-repository) if you want to share your packages.
+- a package: `inputs.nur-iedame.packages.${system}.jagex-launcher`, or add
+  `inputs.nur-iedame.overlays.default` to `nixpkgs.overlays` and use
+  `pkgs.jagex-launcher`;
+- a module: add `inputs.nur-iedame.nixosModules.runescape` to `imports`.
 
-## LICENSE
+The overlay and the modules build with your nixpkgs and your unfree
+setting. `packages` builds with this repository's pinned nixpkgs (or
+yours, with `follows`), with unfree allowed for its own packages.
 
-[MIT](./LICENSE)
+### Through NUR
+
+With [NUR](https://github.com/nix-community/NUR#installation) set up:
+`pkgs.nur.repos.iedame.jagex-launcher`, and the module as
+`nur.repos.iedame.modules.runescape`.
+
+### Without installing
+
+```sh
+nix run github:iedame/nur-packages#jagex-launcher
+```
+
+## Binary cache
+
+CI pushes the free packages to [iedame.cachix.org](https://iedame.cachix.org)
+from `main`:
+
+```nix
+nix.settings = {
+  extra-substituters = [ "https://iedame.cachix.org" ];
+  extra-trusted-public-keys = [ "iedame.cachix.org-1:ULOEEwdkoANx+gj1//8s4DhstfTSipDWNKISwt5GUec=" ];
+};
+```
+
+## Adding a package
+
+1. Put it in `pkgs/<name>/package.nix`, written for `callPackage`, and add
+   it to `default.nix`. Set `meta.platforms`, `meta.license` (unfree
+   ones are never cached) and `meta.broken` when it applies.
+2. NixOS modules go in `modules/` and in `modules/default.nix`.
+3. `nix fmt`, then `nix flake check --all-systems`.
+
+CI (`.github/workflows/build.yml`) checks every pull request: the flake, the
+formatting, the evaluation NUR does, and a build of every package on
+x86_64-linux, aarch64-linux and aarch64-darwin.
+
+## License
+
+[MIT](./LICENSE), for the Nix code here. The packages keep their own
+licences.
