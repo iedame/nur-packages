@@ -11,6 +11,7 @@ and NixOS modules I use on my own machines. Use them at your own risk.
 | Name | Kind | Platforms | What it is |
 |---|---|---|---|
 | `jagex-launcher` | package (unfree) | x86_64-linux | The Jagex Launcher for RuneScape and Old School RuneScape, from Jagex's Linux AppImage |
+| `openrsc-launcher` | package | Linux, macOS | The Open RuneScape Classic launcher, for the classic (2001-2004) RuneScape servers; from NixOS/nixpkgs#460098 until that is merged |
 | `runescape` | NixOS module | x86_64-linux | The launcher plus RuneLite, with the fix that makes "Play" start RuneLite on NixOS |
 
 Unfree packages need `allowUnfree` (or an `allowUnfreePredicate` naming
