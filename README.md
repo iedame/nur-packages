@@ -81,6 +81,11 @@ CI (`.github/workflows/build.yml`) checks every pull request: the flake, the
 formatting, the evaluation NUR does, and a build of every package on
 x86_64-linux, aarch64-linux and aarch64-darwin.
 
+`flake.lock` (nixpkgs) is updated weekly by a pull request from a bot
+(`.github/workflows/flake-update.yml`), which that CI checks before it is
+merged. NUR doesn't use the lock: it evaluates `default.nix` with its own
+nixpkgs.
+
 ## License
 
 [MIT](./LICENSE), for the Nix code here. The packages keep their own
