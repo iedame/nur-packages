@@ -26,7 +26,9 @@
         n:
         lib.elem n [
           "lib"
+          "homeModules"
           "modules"
+          "nixosModules"
           "overlays"
         ];
     in
