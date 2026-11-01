@@ -11,4 +11,5 @@
   modules = import ./modules;
 
   jagex-launcher = pkgs.callPackage ./pkgs/jagex-launcher/package.nix { };
+  openrsc-launcher = pkgs.callPackage ./pkgs/openrsc-launcher/package.nix { };
 }
